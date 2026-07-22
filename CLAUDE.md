@@ -38,6 +38,14 @@ Domain configuration is env-driven, not hardcoded, since the backend and fronten
 
 Copy `.env.example` to `.env` at the repo root to override any of these for `docker compose up` (compose reads `.env` automatically); see that file for a real-domain example. For iterating on the frontend, prefer `npm run dev` (hot reload) over rebuilding the container.
 
+### CI/CD (`.github/workflows/docker-publish.yml`)
+
+On every push to `main`/`develop`, a `v*.*.*` tag, or manual dispatch: a `test` job runs the backend pytest suite and a frontend `npm run build`, then (only if that passes) a `build-and-push` job builds both Docker images via a `[backend, frontend]` matrix and pushes them to GitHub Container Registry as `ghcr.io/<owner>/<repo>-backend` and `ghcr.io/<owner>/<repo>-frontend`, tagged by branch, git tag, short SHA, and `latest` (default branch only) via `docker/metadata-action`.
+
+The frontend image build consumes two optional repo variables (`Settings -> Secrets and variables -> Actions -> Variables`, not secrets, they're public URLs): `VITE_RELAY_WS_URL` and `VITE_RELAY_HTTP_URL`. Unset, they fall back to the `localhost:8000` dev defaults, meaning a `latest` image pulled without configuring these will point at localhost, not your production API domain, since Vite bakes them into the JS bundle at build time and there's no way to change that after the image exists. Set them (e.g. `wss://api.pubkey.cc/ws` / `https://api.pubkey.cc`) before relying on the published image for a real deployment.
+
+GHCR packages pushed via `GITHUB_TOKEN` are usually private by default on first push; make them public (or configure pull access) from the package's own settings on GitHub if they need to be pulled outside CI.
+
 ## Architecture
 
 **Backend (`backend/app/`)**: FastAPI app with one WebSocket endpoint (`/ws`) and a small directory REST API:
