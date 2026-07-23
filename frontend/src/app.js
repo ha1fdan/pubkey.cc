@@ -30,6 +30,7 @@ const state = {
   messages: new Map(), // peer identityPub -> [{ id, from, to, text, ts, expiresAt }]
   activeConversation: null,
   relay: null,
+  relayStatus: "connecting", // connecting | open | reconnecting
   modal: null,
   routeLookup: null, // { key, status: loading|found|not-found|error|needs-onboarding, bundle? }
   onboardingMode: "create", // create | restore-file | restore-paperkey
@@ -96,10 +97,15 @@ async function handleRoute(path) {
 }
 
 function connectToRelay() {
+  state.relayStatus = "connecting";
   state.relay = connectRelay({
     url: RELAY_WS_URL,
     identityKeyPair: state.identity.identityKeyPair,
     onMessage: onIncomingEnvelope,
+    onStatusChange: (status) => {
+      state.relayStatus = status;
+      updateStatusBadge();
+    },
   });
 }
 
@@ -263,7 +269,15 @@ async function onSendMessage(form) {
 
   const sharedKey = await getSharedKey(contact.exchangePub);
   const { ciphertext, nonce } = await encryptMessage(sharedKey, JSON.stringify({ text, expiresAt }));
-  state.relay.send({ to: peer, ciphertext, nonce, ts: Date.now() });
+
+  try {
+    state.relay.send({ to: peer, ciphertext, nonce, ts: Date.now() });
+  } catch (err) {
+    console.error("[pubkey.cc] failed to send, not connected to relay", err);
+    const errorEl = document.getElementById("send-error");
+    if (errorEl) errorEl.textContent = "Not connected right now. Try again in a moment.";
+    return;
+  }
 
   const record = { peer, from: state.identity.identityPub, to: peer, text, ts: Date.now(), expiresAt };
   record.id = await db.saveMessage(record);
@@ -407,7 +421,10 @@ async function onAddContact() {
 }
 
 async function onConfirmWipe() {
-  state.relay?.socket?.close();
+  // relay.close() (not relay.socket.close()) is required here: closing the
+  // raw socket alone would just trigger ws.js's own reconnect logic, which
+  // has no idea the app is about to wipe everything and navigate away.
+  state.relay?.close();
   await db.wipeAll();
   window.location.href = "/";
 }
@@ -479,13 +496,46 @@ app.addEventListener("submit", (event) => {
 // --- rendering -----------------------------------------------------------
 
 function render() {
+  const draft = captureComposerDraft();
+
   let html;
   if (state.view === "onboarding") html = renderOnboarding();
   else if (state.view === "chat") html = renderChatShell();
   else html = `<div class="onboarding"><p>Loading…</p></div>`;
 
   app.innerHTML = html + renderModalHtml();
+
+  restoreComposerDraft(draft);
   scrollMessagesToBottom();
+}
+
+// render() rebuilds the whole DOM via innerHTML, which would otherwise wipe
+// whatever's half-typed in the composer on every unrelated state change
+// (a message arriving, a reconnect, an expiry sweep). The textarea has no
+// `value` in the template, so nothing survives an innerHTML replace unless
+// explicitly carried over like this.
+function captureComposerDraft() {
+  const textarea = document.querySelector('.composer textarea[name="text"]');
+  if (!textarea) return null;
+  const focused = document.activeElement === textarea;
+  return {
+    peer: state.activeConversation,
+    text: textarea.value,
+    focused,
+    selectionStart: focused ? textarea.selectionStart : null,
+    selectionEnd: focused ? textarea.selectionEnd : null,
+  };
+}
+
+function restoreComposerDraft(draft) {
+  if (!draft || !draft.text || draft.peer !== state.activeConversation) return;
+  const textarea = document.querySelector('.composer textarea[name="text"]');
+  if (!textarea) return;
+  textarea.value = draft.text;
+  if (draft.focused) {
+    textarea.focus();
+    textarea.setSelectionRange(draft.selectionStart, draft.selectionEnd);
+  }
 }
 
 function renderOnboarding() {
@@ -603,6 +653,30 @@ function renderLookupBanner() {
   return "";
 }
 
+function computeConversationStatus(peer) {
+  const contact = peer && state.contacts.get(peer);
+  const hasKey = Boolean(contact?.exchangePub);
+  if (!hasKey) return { statusClass: "", statusText: "Establishing session…" };
+  if (state.relayStatus === "open") return { statusClass: "secure", statusText: "End-to-end encrypted" };
+  return {
+    statusClass: "warn",
+    statusText: state.relayStatus === "connecting" ? "Connecting…" : "Reconnecting…",
+  };
+}
+
+// Patches the status badge directly rather than a full render(): relay
+// status flips (connecting/open/reconnecting) happen independently of any
+// content change, and a full re-render would wipe whatever the user has
+// half-typed in the composer (the textarea has no `value` in the
+// template, so an innerHTML replace clears it).
+function updateStatusBadge() {
+  const badge = document.querySelector(".chat-header .status");
+  if (!badge) return;
+  const { statusClass, statusText } = computeConversationStatus(state.activeConversation);
+  badge.className = `status ${statusClass}`.trim();
+  badge.innerHTML = `<span class="dot"></span>${escapeHtml(statusText)}`;
+}
+
 function renderConversation() {
   const peer = state.activeConversation;
   if (!peer) {
@@ -611,7 +685,7 @@ function renderConversation() {
 
   const contact = state.contacts.get(peer);
   const messages = state.messages.get(peer) || [];
-  const secure = Boolean(contact?.exchangePub);
+  const { statusClass, statusText } = computeConversationStatus(peer);
 
   const messageItems =
     messages
@@ -633,11 +707,12 @@ function renderConversation() {
     <div class="chat-header">
       <div>
         <div>${escapeHtml(contact?.nickname || shortKey(peer))}</div>
-        <div class="status ${secure ? "secure" : ""}"><span class="dot"></span>${secure ? "End-to-end encrypted" : "Establishing session…"}</div>
+        <div class="status ${statusClass}"><span class="dot"></span>${statusText}</div>
       </div>
       <button data-action="open-verify-modal">Verify</button>
     </div>
     <div class="messages" id="messages">${messageItems}</div>
+    <p class="hint error composer-error" id="send-error"></p>
     <form class="composer" data-action="send-message">
       <select name="ttl" title="Disappearing message timer">
         <option value="0">Off</option>

@@ -1,6 +1,14 @@
 services:
   redis:
     image: redis:7-alpine
+    # AOF durability, not just periodic RDB snapshots: every write is
+    # logged and replayed on restart, so the offline-message queue,
+    # directory entries, and (critically) paper-key recovery blobs
+    # survive a container restart rather than only surviving until the
+    # next snapshot interval.
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
     ports:
       - "6379:6379"
 
@@ -34,3 +42,6 @@ services:
       - "5173:80"
     depends_on:
       - backend
+
+volumes:
+  redis-data:

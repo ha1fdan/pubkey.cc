@@ -7,6 +7,7 @@
   --text-dim: #8a8a90;
   --accent: #34d399;
   --danger: #f87171;
+  --warn: #fbbf24;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -113,6 +114,10 @@ input[type="file"] {
   color: var(--danger);
   min-height: 1em;
   margin: 0;
+}
+
+.composer-error {
+  padding: 0 0.75rem;
 }
 
 .header-actions {
@@ -226,6 +231,14 @@ input[type="file"] {
 
 .status.secure .dot {
   background: var(--accent);
+}
+
+.status.warn {
+  color: var(--warn);
+}
+
+.status.warn .dot {
+  background: var(--warn);
 }
 
 .messages {
