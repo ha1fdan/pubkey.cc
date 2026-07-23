@@ -25,6 +25,11 @@ const RELAY_HTTP_URL = import.meta.env.VITE_RELAY_HTTP_URL ?? "http://localhost:
 
 const app = document.getElementById("app");
 
+// A UI preference, not key material or message content, so plain
+// localStorage (not IndexedDB) is fine -- it just needs to survive a
+// refresh, not be wiped with the same rigor as identity/contacts/messages.
+const TTL_STORAGE_KEY = "pubkeycc:selectedTtl";
+
 const state = {
   view: "loading", // loading | onboarding | chat
   identity: null,
@@ -36,7 +41,9 @@ const state = {
   modal: null,
   routeLookup: null, // { key, status: loading|found|not-found|error|needs-onboarding, bundle? }
   onboardingMode: "create", // create | restore-file | restore-paperkey
-  selectedTtl: "0", // last-chosen disappearing-message TTL, remembered across sends/conversations
+  // Last-chosen disappearing-message TTL, remembered across sends/conversations
+  // *and* page refreshes (localStorage.getItem returns null pre-first-choice).
+  selectedTtl: localStorage.getItem(TTL_STORAGE_KEY) || "0",
 };
 
 const sharedKeyCache = new Map();
@@ -474,6 +481,7 @@ async function onConfirmWipe() {
   // has no idea the app is about to wipe everything and navigate away.
   state.relay?.close();
   await db.wipeAll();
+  localStorage.removeItem(TTL_STORAGE_KEY);
   window.location.href = "/";
 }
 
@@ -553,7 +561,9 @@ app.addEventListener("submit", (event) => {
 // no memory of the previous choice once render() regenerates it fresh.
 app.addEventListener("change", (event) => {
   const select = event.target.closest('.composer select[name="ttl"]');
-  if (select) state.selectedTtl = select.value;
+  if (!select) return;
+  state.selectedTtl = select.value;
+  localStorage.setItem(TTL_STORAGE_KEY, select.value);
 });
 
 // Enter sends (like every other chat app); Shift+Enter still inserts a
