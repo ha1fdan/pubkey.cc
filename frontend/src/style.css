@@ -21,6 +21,7 @@ body {
   background: var(--bg);
   color: var(--text);
   height: 100vh;
+  height: 100dvh; /* mobile browsers resize the visual viewport as chrome shows/hides; 100vh alone jitters */
   overflow: hidden;
 }
 
@@ -209,6 +210,20 @@ input[type="file"] {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.5rem;
+}
+
+.chat-header > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.back-button {
+  display: none;
+  flex: 0 0 auto;
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0.4rem 0.7rem;
 }
 
 .status {
@@ -258,6 +273,7 @@ input[type="file"] {
   font-size: 0.85rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .message.out {
@@ -283,7 +299,7 @@ input[type="file"] {
   padding: 0.75rem;
   display: flex;
   gap: 0.5rem;
-  align-items: center;
+  align-items: flex-end;
 }
 
 .composer textarea {
@@ -296,6 +312,8 @@ input[type="file"] {
   padding: 0.5rem;
   font-family: inherit;
   font-size: 0.85rem;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .composer select {
@@ -408,7 +426,26 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .sidebar {
+  /* List/detail navigation: only one of sidebar or conversation is ever
+     visible at once, toggled by whether a conversation is open, with the
+     header's back button as the way to return -- previously .sidebar was
+     unconditionally hidden below this width with no way back to it at all,
+     stranding mobile users on whichever screen loaded first. */
+  .shell:not(.conversation-open) .main {
     display: none;
+  }
+
+  .shell.conversation-open .sidebar {
+    display: none;
+  }
+
+  .back-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .message {
+    max-width: 85%;
   }
 }
