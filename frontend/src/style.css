@@ -170,8 +170,9 @@ input[type="file"] {
   border-bottom: 1px solid var(--border);
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .contact:hover {
@@ -183,8 +184,32 @@ input[type="file"] {
   border-left: 2px solid var(--accent);
 }
 
+.contact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
 .contact .name {
   font-size: 0.85rem;
+}
+
+/* Always visible, not hover-only: a hover-reveal delete button would be
+   unreachable on touch devices, which is exactly the class of mobile bug
+   already fixed once in this file (see the conversation-open media query
+   below) -- not repeating it here. */
+.contact-delete {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.6rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-dim);
+}
+
+.contact-delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .sidebar-footer {
