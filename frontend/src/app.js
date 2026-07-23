@@ -433,6 +433,41 @@ async function onAddContact() {
   render();
 }
 
+async function onDeleteConversation(el) {
+  const peer = el.dataset.peer;
+  const contact = state.contacts.get(peer);
+  if (!contact) return;
+  state.modal = {
+    type: "delete-conversation-confirm",
+    peer,
+    label: contact.nickname || shortKey(peer),
+  };
+  render();
+}
+
+async function onConfirmDeleteConversation() {
+  const peer = state.modal?.peer;
+  if (!peer) return;
+  const contact = state.contacts.get(peer);
+
+  await db.deleteContact(peer);
+  await db.deleteMessagesForPeer(peer);
+
+  state.contacts.delete(peer);
+  state.messages.delete(peer);
+  loadedPeers.delete(peer);
+  if (contact?.exchangePub) sharedKeyCache.delete(contact.exchangePub);
+
+  state.modal = null;
+
+  if (state.activeConversation === peer) {
+    state.activeConversation = null;
+    navigate("/");
+  } else {
+    render();
+  }
+}
+
 async function onConfirmWipe() {
   // relay.close() (not relay.socket.close()) is required here: closing the
   // raw socket alone would just trigger ws.js's own reconnect logic, which
@@ -461,6 +496,8 @@ const handlers = {
     state.activeConversation = null;
     navigate("/");
   },
+  "delete-conversation": onDeleteConversation,
+  "confirm-delete-conversation": onConfirmDeleteConversation,
   "open-share-modal": onOpenShareModal,
   "open-backup-modal": onOpenBackupModal,
   "open-paperkey-modal": onOpenPaperKeyModal,
@@ -650,8 +687,11 @@ function renderChatShell() {
       .map(
         (c) => `
       <div class="contact ${c.identityPub === state.activeConversation ? "active" : ""}" data-action="open-conversation" data-peer="${escapeHtml(c.identityPub)}">
-        <span class="name">${escapeHtml(c.nickname || shortKey(c.identityPub))}</span>
-        <span class="fp">${escapeHtml(c.fp || shortKey(c.identityPub))}</span>
+        <div class="contact-info">
+          <span class="name">${escapeHtml(c.nickname || shortKey(c.identityPub))}</span>
+          <span class="fp">${escapeHtml(c.fp || shortKey(c.identityPub))}</span>
+        </div>
+        <button type="button" class="contact-delete" data-action="delete-conversation" data-peer="${escapeHtml(c.identityPub)}" title="Delete conversation" aria-label="Delete conversation">×</button>
       </div>
     `,
       )
@@ -759,7 +799,7 @@ function renderConversation() {
           : "";
         return `
         <div class="message ${dir}">
-          <div>${escapeHtml(m.text)}</div>
+          <div class="message-text">${escapeHtml(m.text)}</div>
           <div class="meta">${formatTime(m.ts)}${expiry}</div>
         </div>
       `;
@@ -867,6 +907,21 @@ function renderModalHtml() {
           <div class="actions">
             <button data-action="save-nickname" data-peer="${escapeHtml(modal.peer)}">Save</button>
             <button data-action="close-modal">Close</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (modal.type === "delete-conversation-confirm") {
+    return `
+      <div class="modal-overlay">
+        <div class="modal">
+          <h2>Delete this conversation?</h2>
+          <p class="hint">This removes <strong>${escapeHtml(modal.label)}</strong> and your entire message history with them from this device. It cannot be undone. They aren't notified, and if they message you again, they'll be added back as a new contact.</p>
+          <div class="actions">
+            <button type="button" data-action="close-modal">Cancel</button>
+            <button data-action="confirm-delete-conversation" class="danger">Delete</button>
           </div>
         </div>
       </div>

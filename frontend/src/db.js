@@ -64,6 +64,12 @@ export async function loadContacts() {
   return reqToPromise(store.getAll());
 }
 
+export async function deleteContact(identityPub) {
+  const db = await getDb();
+  const store = db.transaction("contacts", "readwrite").objectStore("contacts");
+  await reqToPromise(store.delete(identityPub));
+}
+
 export async function saveMessage(message) {
   const db = await getDb();
   const store = db.transaction("messages", "readwrite").objectStore("messages");
@@ -80,6 +86,24 @@ export async function loadMessagesForPeer(peer) {
   const db = await getDb();
   const store = db.transaction("messages", "readonly").objectStore("messages").index("byPeer");
   return reqToPromise(store.getAll(peer));
+}
+
+export async function deleteMessagesForPeer(peer) {
+  const db = await getDb();
+  const index = db.transaction("messages", "readwrite").objectStore("messages").index("byPeer");
+  return new Promise((resolve, reject) => {
+    const request = index.openCursor(IDBKeyRange.only(peer));
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) {
+        resolve();
+        return;
+      }
+      cursor.delete();
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error);
+  });
 }
 
 export async function wipeAll() {
