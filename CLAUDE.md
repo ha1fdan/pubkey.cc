@@ -38,9 +38,24 @@ Domain configuration is env-driven, not hardcoded, since the backend and fronten
 
 Copy `.env.example` to `.env` at the repo root to override any of these for `docker compose up` (compose reads `.env` automatically); see that file for a real-domain example. For iterating on the frontend, prefer `npm run dev` (hot reload) over rebuilding the container.
 
+### Production (`docker-compose.prod.yml`)
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+Pulls the images CI already built and tested from GHCR (`ghcr.io/ha1fdan/pubkey.cc-backend`/`-frontend`, tag via `IMAGE_TAG`, default `latest`) instead of building locally, adds `restart: unless-stopped`, health checks, and log rotation, and drops dev's `CORS_ORIGINS`/`VITE_*` localhost fallbacks: `CORS_ORIGINS` is required here (`${CORS_ORIGINS:?...}`, compose refuses to start without it) since silently defaulting to `localhost` in production would lock out the real frontend. Copy `.env.prod.example` to `.env.prod`; pass it explicitly via `--env-file` rather than relying on a plain `.env`, since compose auto-loads `.env` regardless of which `-f` file you target, and a dev `.env` sitting in the same directory would silently satisfy the "required" check with the wrong (localhost) value.
+
+There's no `VITE_RELAY_WS_URL`/`VITE_RELAY_HTTP_URL` here at all: those are baked into the frontend image at CI build time (see below), and nothing in this file can change that after the fact. GHCR packages are private by default on first push (see below); `docker login ghcr.io` on the deploy host before the first `pull`.
+
+Both health checks were verified against the actual built images, not assumed: the backend has no curl/wget (`python:3.12-slim`), so it shells out to `python -c "...urllib.request..."` instead; the frontend's health check must hit `127.0.0.1:8080`, not `localhost:8080` -- `wget` resolves `localhost` to `::1` first inside this image, and nginx only binds the IPv4 wildcard, so the seemingly-equivalent `localhost` form fails with connection refused even though the server is up.
+
 ### CI/CD (`.github/workflows/docker-publish.yml`)
 
 On every push to `main`/`develop`, a `v*.*.*` tag, or manual dispatch: a `test` job runs the backend pytest suite and a frontend `npm run build`, then (only if that passes) a `build-and-push` job builds both Docker images via a `[backend, frontend]` matrix and pushes them to GitHub Container Registry as `ghcr.io/<owner>/<repo>-backend` and `ghcr.io/<owner>/<repo>-frontend`, tagged by branch, git tag, short SHA, and `latest` (default branch only) via `docker/metadata-action`.
+
+Images are built for `linux/amd64,linux/arm64` (`docker/setup-qemu-action` + `platforms:` on `build-push-action`) as a single multi-arch manifest per tag, so `docker pull`/`compose pull` picks the right one automatically regardless of host architecture. Without this, `docker compose -f docker-compose.prod.yml pull` on an arm64 host (a Graviton/Ampere/Oracle-ARM VPS, an Apple Silicon Mac, etc.) fails with `no matching manifest for linux/arm64/v8 in the manifest list entries`, since GitHub-hosted runners default to amd64 only and the earlier version of this workflow never asked for anything else. Verified locally (not just assumed) with `docker buildx build --platform linux/amd64,linux/arm64` against both Dockerfiles, and by loading and actually *running* the arm64 output under QEMU emulation: both containers came up, `uname -m` reported `aarch64`, and the exact health-check commands from `docker-compose.prod.yml` (`python -c "...urllib..."` for the backend, `wget -qO- http://127.0.0.1:8080/` for the frontend) succeeded against them.
 
 The frontend image build consumes two optional repo variables (`Settings -> Secrets and variables -> Actions -> Variables`, not secrets, they're public URLs): `VITE_RELAY_WS_URL` and `VITE_RELAY_HTTP_URL`. Unset, they fall back to the `localhost:8000` dev defaults, meaning a `latest` image pulled without configuring these will point at localhost, not your production API domain, since Vite bakes them into the JS bundle at build time and there's no way to change that after the image exists. Set them (e.g. `wss://api.pubkey.cc/ws` / `https://api.pubkey.cc`) before relying on the published image for a real deployment.
 

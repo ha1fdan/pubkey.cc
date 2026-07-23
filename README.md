@@ -33,3 +33,15 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## Production
+
+`docker-compose.prod.yml` pulls the images CI already built and published to GHCR instead of building locally, and requires real config (no `localhost` fallbacks):
+
+```bash
+cp .env.prod.example .env.prod   # fill in CORS_ORIGINS at minimum
+docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+See `CLAUDE.md` for details, including why `VITE_RELAY_WS_URL`/`VITE_RELAY_HTTP_URL` aren't set here (they're baked into the frontend image at CI build time).

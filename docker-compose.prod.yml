@@ -1,0 +1,89 @@
+# Production deployment. Pulls the images .github/workflows/docker-publish.yml
+# already built and tested in CI, instead of building locally -- what runs
+# here is exactly what CI ran the test suite against.
+#
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# A few things only apply to this file, not the dev docker-compose.yml:
+#
+# - GHCR packages are private by default on first push (see CLAUDE.md). On
+#   this host, run once:
+#     docker login ghcr.io -u <github-username> -p <PAT with read:packages>
+#
+# - VITE_RELAY_WS_URL / VITE_RELAY_HTTP_URL are baked into the frontend
+#   image at build time by CI (from repository variables), not set here --
+#   there is no way to override them at deploy time. If they're wrong,
+#   fix the repo variables, re-run the publish workflow, then re-pull.
+#
+# - CORS_ORIGINS has no dev-friendly default here on purpose: dev's
+#   docker-compose.yml defaults it to localhost, which would silently lock
+#   your real frontend domain out of the relay if carried over here. Set it
+#   in .env (copy .env.example) or the shell environment before running.
+#
+# - IMAGE_TAG picks which published tag to run (a git tag like v1.2.3, a
+#   branch name, a short commit SHA, or the default `latest`); see the
+#   workflow's tag rules in .github/workflows/docker-publish.yml.
+
+name: pubkeycc-prod
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    # No host port mapping: Redis has no auth, so it must stay reachable
+    # only over the internal Compose network (redis://redis:6379/0).
+
+  backend:
+    image: ghcr.io/ha1fdan/pubkey.cc-backend:${IMAGE_TAG:-latest}
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MESSAGE_TTL_SECONDS: ${MESSAGE_TTL_SECONDS:-604800}
+      CHALLENGE_TTL_SECONDS: ${CHALLENGE_TTL_SECONDS:-60}
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS to your frontend's real origin(s), e.g. https://pubkey.cc,https://www.pubkey.cc}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      # No curl/wget in python:3.12-slim; urllib is stdlib.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    image: ghcr.io/ha1fdan/pubkey.cc-frontend:${IMAGE_TAG:-latest}
+    ports:
+      - "${FRONTEND_PORT:-80}:8080"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      # 127.0.0.1, not localhost: this image's /etc/hosts resolves
+      # localhost to ::1 first, and nginx only binds the IPv4 wildcard, so
+      # `wget http://localhost:8080/` fails here even though the server is
+      # up (confirmed against the actual built image, not assumed).
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  redis-data:
