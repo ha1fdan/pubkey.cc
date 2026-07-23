@@ -56,3 +56,34 @@ def test_verify_challenge_signature_rejects_tampered_challenge():
     signature_b64url = _b64url(_sign_raw(private_key, challenge.encode()))
 
     assert not auth.verify_challenge_signature(pubkey_b64url, challenge + "x", signature_b64url)
+
+
+def test_verify_challenge_signature_rejects_non_p256_curve():
+    private_key = ec.generate_private_key(ec.SECP384R1())
+    spki = private_key.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    pubkey_b64url = _b64url(spki)
+
+    challenge = auth.new_challenge()
+    signature_b64url = _b64url(_sign_raw(private_key, challenge.encode()))
+
+    assert not auth.verify_challenge_signature(pubkey_b64url, challenge, signature_b64url)
+
+
+def test_verify_challenge_signature_rejects_wrong_length_signature():
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    spki = private_key.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    pubkey_b64url = _b64url(spki)
+    challenge = auth.new_challenge()
+
+    oversized_signature = _b64url(_sign_raw(private_key, challenge.encode()) + b"\x00" * 8)
+
+    assert not auth.verify_challenge_signature(pubkey_b64url, challenge, oversized_signature)
+
+
+def test_registration_payload_matches_frontend_format():
+    assert auth.registration_payload("pk1", "ek1", None) == "pk1|ek1|"
+    assert auth.registration_payload("pk1", "ek1", "alice") == "pk1|ek1|alice"

@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from . import storage
+from .auth import registration_payload, verify_challenge_signature
 from .config import CORS_ORIGINS
 from .relay import handle_connection
 
@@ -20,6 +21,7 @@ class DirectoryEntry(BaseModel):
     identity_pub: str
     exchange_pub: str
     handle: str | None = None
+    signature: str
 
 
 class RecoveryBlob(BaseModel):
@@ -39,7 +41,13 @@ async def healthz() -> dict:
 @app.post("/register")
 async def register(entry: DirectoryEntry) -> dict:
     """Publish the public identity/exchange keys behind /u/<key_or_handle>.
-    No private key material ever reaches the server."""
+    No private key material ever reaches the server. entry.signature must be
+    identity_pub's signature over registration_payload(...) -- without this,
+    anyone could publish an attacker-chosen exchange_pub under a victim's
+    identity_pub and hijack their directory entry."""
+    payload = registration_payload(entry.identity_pub, entry.exchange_pub, entry.handle)
+    if not verify_challenge_signature(entry.identity_pub, payload, entry.signature):
+        raise HTTPException(status_code=401, detail="invalid signature")
     await storage.publish_directory_entry(entry.identity_pub, entry.exchange_pub, entry.handle)
     return {"status": "registered"}
 

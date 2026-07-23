@@ -14,7 +14,9 @@ import {
   importExchangePublicKey,
   importIdentityBackup,
   recoveryIdForPaperKey,
+  registrationPayload,
   safetyNumber,
+  signChallenge,
 } from "./crypto.js";
 import QRCode from "qrcode";
 
@@ -197,7 +199,7 @@ function startExpirySweep() {
 
 function tickExpiryCountdowns(now) {
   document.querySelectorAll(".expiry[data-expires-at]").forEach((el) => {
-    el.textContent = formatCountdown(Number(el.dataset.expiresAt), now);
+    el.textContent = ` · ${formatCountdown(Number(el.dataset.expiresAt), now)}`;
   });
 }
 
@@ -241,10 +243,20 @@ async function finishIdentitySetup(identity) {
   await db.saveIdentity(identity);
   state.identity = identity;
 
+  // /register requires proof identity_pub is actually controlled by the
+  // caller, or anyone could publish an attacker-chosen exchange_pub under
+  // someone else's identity_pub and hijack their directory entry.
+  const payload = registrationPayload(identity.identityPub, identity.exchangePub, null);
+  const signature = await signChallenge(identity.identityKeyPair.privateKey, payload);
+
   await fetch(`${RELAY_HTTP_URL}/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identity_pub: identity.identityPub, exchange_pub: identity.exchangePub }),
+    body: JSON.stringify({
+      identity_pub: identity.identityPub,
+      exchange_pub: identity.exchangePub,
+      signature,
+    }),
   });
 
   connectToRelay();
@@ -658,6 +670,9 @@ function computeConversationStatus(peer) {
   const hasKey = Boolean(contact?.exchangePub);
   if (!hasKey) return { statusClass: "", statusText: "Establishing session…" };
   if (state.relayStatus === "open") return { statusClass: "secure", statusText: "End-to-end encrypted" };
+  if (state.relayStatus === "replaced") {
+    return { statusClass: "warn", statusText: "Open in another tab" };
+  }
   return {
     statusClass: "warn",
     statusText: state.relayStatus === "connecting" ? "Connecting…" : "Reconnecting…",

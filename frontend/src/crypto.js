@@ -26,6 +26,14 @@ export async function importExchangePublicKey(b64url) {
   return crypto.subtle.importKey("spki", fromBase64Url(b64url), EXCHANGE_ALG, true, []);
 }
 
+// Must byte-for-byte match the backend's registration_payload() in
+// auth.py -- this is what /register requires a valid identity_pub
+// signature over, proving the caller controls the identity_pub it's
+// publishing an exchange_pub for.
+export function registrationPayload(identityPub, exchangePub, handle) {
+  return `${identityPub}|${exchangePub}|${handle || ""}`;
+}
+
 export async function signChallenge(privateKey, challenge) {
   const signature = await crypto.subtle.sign(
     { name: "ECDSA", hash: "SHA-256" },

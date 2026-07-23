@@ -18,8 +18,12 @@ def _queue_key(pubkey: str) -> str:
     return f"queue:{pubkey}"
 
 
-def _directory_key(pubkey: str) -> str:
-    return f"directory:{pubkey}"
+def _directory_key_by_pubkey(identity_pub: str) -> str:
+    return f"directory:key:{identity_pub}"
+
+
+def _directory_key_by_handle(handle: str) -> str:
+    return f"directory:handle:{handle}"
 
 
 def _recovery_key(recovery_id: str) -> str:
@@ -48,14 +52,19 @@ async def drain_queue(recipient: str) -> list[dict]:
 async def publish_directory_entry(identity_pub: str, exchange_pub: str, handle: str | None) -> None:
     client = get_client()
     payload = json.dumps({"identity_pub": identity_pub, "exchange_pub": exchange_pub})
-    await client.set(_directory_key(identity_pub), payload)
+    await client.set(_directory_key_by_pubkey(identity_pub), payload)
     if handle:
-        await client.set(_directory_key(handle), payload)
+        await client.set(_directory_key_by_handle(handle), payload)
 
 
 async def lookup_directory_entry(key_or_handle: str) -> dict | None:
+    """Identity keys and handles live in separate namespaces so a handle
+    can never collide with (and overwrite/shadow) someone else's identity
+    key entry. Identity-key lookups take priority over handles."""
     client = get_client()
-    raw = await client.get(_directory_key(key_or_handle))
+    raw = await client.get(_directory_key_by_pubkey(key_or_handle))
+    if raw is None:
+        raw = await client.get(_directory_key_by_handle(key_or_handle))
     return json.loads(raw) if raw else None
 
 

@@ -9,8 +9,9 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis-data:/data
-    ports:
-      - "6379:6379"
+    # No host port mapping: Redis has no auth, so it must stay reachable
+    # only via the internal Compose network (redis://redis:6379/0), never
+    # from the host or outside world.
 
   backend:
     build: ./backend
@@ -39,7 +40,7 @@ services:
         VITE_RELAY_WS_URL: ${VITE_RELAY_WS_URL:-ws://localhost:8000/ws}
         VITE_RELAY_HTTP_URL: ${VITE_RELAY_HTTP_URL:-http://localhost:8000}
     ports:
-      - "5173:80"
+      - "5173:8080"
     depends_on:
       - backend
 

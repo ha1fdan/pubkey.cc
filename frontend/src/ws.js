@@ -2,6 +2,13 @@ import { exportPublicKey, signChallenge } from "./crypto.js";
 
 const MAX_RECONNECT_DELAY_MS = 30000;
 
+// Matches backend/app/relay.py's REPLACED_CLOSE_CODE: the server sends this
+// when a newer connection for the same identity has taken over (e.g. the
+// same identity opened in a second tab). Must NOT trigger a reconnect --
+// reconnecting would just close that newer connection in turn, and the two
+// tabs would fight over the connection slot forever.
+const REPLACED_CLOSE_CODE = 4000;
+
 // Connects to the relay and proves ownership of the identity key by signing
 // a server-issued challenge. Never sends anything but public keys and
 // already-encrypted envelopes.
@@ -49,8 +56,12 @@ export function connectRelay({ url, identityKeyPair, onReady, onMessage, onStatu
       }
     });
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       if (closedByCaller) return;
+      if (event.code === REPLACED_CLOSE_CODE) {
+        setStatus("replaced");
+        return;
+      }
       scheduleReconnect();
     });
 

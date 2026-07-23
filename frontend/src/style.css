@@ -8,6 +8,7 @@
   --accent: #34d399;
   --danger: #f87171;
   --warn: #fbbf24;
+
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
@@ -256,7 +257,7 @@ input[type="file"] {
   border-radius: 10px;
   font-size: 0.85rem;
   line-height: 1.4;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .message.out {
