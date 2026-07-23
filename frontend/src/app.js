@@ -466,6 +466,7 @@ const handlers = {
     render();
   },
   "copy-text": onCopyText,
+  "select-text": (el) => el.select(),
   "save-nickname": onSaveNickname,
   "add-contact": onAddContact,
   "dismiss-lookup": () => {
@@ -616,7 +617,7 @@ function renderChatShell() {
       </div>
     `,
       )
-      .join("") || `<div class="hint" style="padding:1rem;">No contacts yet. Share your link to get started.</div>`;
+      .join("") || `<div class="hint hint-padded">No contacts yet. Share your link to get started.</div>`;
 
   return `
     <div class="shell">
@@ -752,7 +753,7 @@ function renderModalHtml() {
           <h2>Your identity</h2>
           <p class="hint">Share this link so someone can start an encrypted conversation with you. Anyone with the link can see your public key, that's expected, it's public.</p>
           <img class="qr" src="${modal.qrDataUrl}" width="180" height="180" alt="QR code for your identity link" />
-          <input type="text" readonly value="${escapeHtml(modal.link)}" onclick="this.select()" />
+          <input type="text" readonly value="${escapeHtml(modal.link)}" data-action="select-text" />
           <div class="actions">
             <button data-action="copy-text" data-text="${escapeHtml(modal.link)}">Copy link</button>
             <button data-action="close-modal">Close</button>
