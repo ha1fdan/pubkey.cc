@@ -36,6 +36,7 @@ const state = {
   modal: null,
   routeLookup: null, // { key, status: loading|found|not-found|error|needs-onboarding, bundle? }
   onboardingMode: "create", // create | restore-file | restore-paperkey
+  selectedTtl: "0", // last-chosen disappearing-message TTL, remembered across sends/conversations
 };
 
 const sharedKeyCache = new Map();
@@ -456,6 +457,10 @@ const handlers = {
     render();
   },
   "open-conversation": (el) => navigate(`/u/${el.dataset.peer}`),
+  "back-to-contacts": () => {
+    state.activeConversation = null;
+    navigate("/");
+  },
   "open-share-modal": onOpenShareModal,
   "open-backup-modal": onOpenBackupModal,
   "open-paperkey-modal": onOpenPaperKeyModal,
@@ -506,6 +511,31 @@ app.addEventListener("submit", (event) => {
   handler(form);
 });
 
+// Remember the disappearing-message TTL choice so it survives the next
+// render instead of always reverting to "Off" -- the <select> otherwise has
+// no memory of the previous choice once render() regenerates it fresh.
+app.addEventListener("change", (event) => {
+  const select = event.target.closest('.composer select[name="ttl"]');
+  if (select) state.selectedTtl = select.value;
+});
+
+// Enter sends (like every other chat app); Shift+Enter still inserts a
+// newline, which is the textarea's native behavior and needs no handling.
+app.addEventListener("keydown", (event) => {
+  const textarea = event.target.closest('.composer textarea[name="text"]');
+  if (!textarea || event.key !== "Enter" || event.shiftKey) return;
+  event.preventDefault();
+  textarea.closest("form")?.requestSubmit();
+});
+
+// Grows the composer with its content (capped) instead of staying a single
+// fixed-height row, since Shift+Enter now produces real multi-line input
+// the user needs to actually see while typing.
+app.addEventListener("input", (event) => {
+  const textarea = event.target.closest('.composer textarea[name="text"]');
+  if (textarea) autoGrowTextarea(textarea);
+});
+
 // --- rendering -----------------------------------------------------------
 
 function render() {
@@ -545,10 +575,18 @@ function restoreComposerDraft(draft) {
   const textarea = document.querySelector('.composer textarea[name="text"]');
   if (!textarea) return;
   textarea.value = draft.text;
+  autoGrowTextarea(textarea);
   if (draft.focused) {
     textarea.focus();
     textarea.setSelectionRange(draft.selectionStart, draft.selectionEnd);
   }
+}
+
+const COMPOSER_MAX_HEIGHT_PX = 120;
+
+function autoGrowTextarea(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, COMPOSER_MAX_HEIGHT_PX)}px`;
 }
 
 function renderOnboarding() {
@@ -619,8 +657,17 @@ function renderChatShell() {
       )
       .join("") || `<div class="hint hint-padded">No contacts yet. Share your link to get started.</div>`;
 
+  // On mobile only one of sidebar/main is shown at a time (see the
+  // .conversation-open media query); .main also needs to be reachable when
+  // there's a pending /u/<key> lookup banner to act on, not just when a
+  // conversation is already open, or a fresh /u/<key> visit would show
+  // neither panel.
+  const hasMainContent = Boolean(
+    state.activeConversation || (state.routeLookup && state.routeLookup.status !== "needs-onboarding"),
+  );
+
   return `
-    <div class="shell">
+    <div class="shell ${hasMainContent ? "conversation-open" : ""}">
       <aside class="sidebar">
         <div class="sidebar-header">
           <div>
@@ -719,8 +766,22 @@ function renderConversation() {
       })
       .join("") || `<div class="empty-state">No messages yet.</div>`;
 
+  const ttlOptions = [
+    ["0", "Off"],
+    ["10000", "10s"],
+    ["60000", "1m"],
+    ["3600000", "1h"],
+  ];
+  const ttlOptionsHtml = ttlOptions
+    .map(
+      ([value, label]) =>
+        `<option value="${value}" ${state.selectedTtl === value ? "selected" : ""}>${label}</option>`,
+    )
+    .join("");
+
   return `
     <div class="chat-header">
+      <button type="button" class="back-button" data-action="back-to-contacts" aria-label="Back to contacts">‹</button>
       <div>
         <div>${escapeHtml(contact?.nickname || shortKey(peer))}</div>
         <div class="status ${statusClass}"><span class="dot"></span>${statusText}</div>
@@ -730,12 +791,7 @@ function renderConversation() {
     <div class="messages" id="messages">${messageItems}</div>
     <p class="hint error composer-error" id="send-error"></p>
     <form class="composer" data-action="send-message">
-      <select name="ttl" title="Disappearing message timer">
-        <option value="0">Off</option>
-        <option value="10000">10s</option>
-        <option value="60000">1m</option>
-        <option value="3600000">1h</option>
-      </select>
+      <select name="ttl" title="Disappearing message timer">${ttlOptionsHtml}</select>
       <textarea name="text" rows="1" placeholder="Message…" autocomplete="off"></textarea>
       <button type="submit" class="primary">Send</button>
     </form>
