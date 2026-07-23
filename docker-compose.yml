@@ -1,0 +1,48 @@
+services:
+  redis:
+    image: redis:7-alpine
+    # AOF durability, not just periodic RDB snapshots: every write is
+    # logged and replayed on restart, so the offline-message queue,
+    # directory entries, and (critically) paper-key recovery blobs
+    # survive a container restart rather than only surviving until the
+    # next snapshot interval.
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    # No host port mapping: Redis has no auth, so it must stay reachable
+    # only via the internal Compose network (redis://redis:6379/0), never
+    # from the host or outside world.
+
+  backend:
+    build: ./backend
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MESSAGE_TTL_SECONDS: ${MESSAGE_TTL_SECONDS:-604800}
+      CHALLENGE_TTL_SECONDS: ${CHALLENGE_TTL_SECONDS:-60}
+      # Comma-separated origins allowed to call this relay. Defaults to the
+      # frontend's local dev port; in production set this to the deployed
+      # frontend's domain(s), e.g. https://pubkey.cc,https://www.pubkey.cc
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the JS bundle at build time (Vite env vars aren't
+        # readable at container runtime). Point these at the backend's
+        # public domain for a real deployment, e.g.:
+        #   VITE_RELAY_WS_URL=wss://api.pubkey.cc/ws
+        #   VITE_RELAY_HTTP_URL=https://api.pubkey.cc
+        VITE_RELAY_WS_URL: ${VITE_RELAY_WS_URL:-ws://localhost:8000/ws}
+        VITE_RELAY_HTTP_URL: ${VITE_RELAY_HTTP_URL:-http://localhost:8000}
+    ports:
+      - "5173:8080"
+    depends_on:
+      - backend
+
+volumes:
+  redis-data:

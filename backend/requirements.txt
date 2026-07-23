@@ -1,0 +1,8 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+# uvicorn[standard] only requires h11>=0.8; pin explicitly so builds can't
+# resolve a vulnerable h11 below 0.16.0 (CVE-2025-43859, request smuggling).
+h11>=0.16.0
+redis>=5.0
+cryptography>=42.0
+pydantic>=2.6

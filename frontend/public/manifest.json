@@ -1,0 +1,9 @@
+{
+  "name": "pubkey.cc",
+  "short_name": "pubkey.cc",
+  "description": "Minimalist end-to-end encrypted messaging anchored to public keys.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0c",
+  "theme_color": "#0a0a0c"
+}
