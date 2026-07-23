@@ -759,7 +759,7 @@ function renderConversation() {
           : "";
         return `
         <div class="message ${dir}">
-          <div>${escapeHtml(m.text)}</div>
+          <div class="message-text">${escapeHtml(m.text)}</div>
           <div class="meta">${formatTime(m.ts)}${expiry}</div>
         </div>
       `;

@@ -273,6 +273,15 @@ input[type="file"] {
   font-size: 0.85rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+/* white-space: pre-wrap belongs on the text content specifically, not
+   .message itself: white-space is inherited, and .message's own children
+   are separated by the template literal's incidental indentation
+   whitespace (newlines + spaces between the text/meta divs) -- putting
+   pre-wrap on .message preserved THAT as visible blank lines and padding
+   too, inflating every bubble regardless of message length. */
+.message-text {
   white-space: pre-wrap;
 }
 
